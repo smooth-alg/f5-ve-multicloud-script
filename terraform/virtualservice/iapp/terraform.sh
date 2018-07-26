@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/bash -e
 
 export BASE_DIR=`pwd`;
 export DIR=terraform/virtualservice/iapp;

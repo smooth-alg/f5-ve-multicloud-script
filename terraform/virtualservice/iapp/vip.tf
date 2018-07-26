@@ -6,7 +6,7 @@ variable bigip_password  { default = "admin" }
 variable partition               { default = "Common"       }
 variable service_name            { default = "www"       }
 variable vs_address              { default = "0.0.0.0/0" }
-variable vs_port                 { default = "443"        }
+variable vs_port                 { default = "444"        }
 variable client_ssl_cert_name    { default = "default"   }
 variable ltm_policy_name         { default = "app-ltm-policy" }
 variable applicationPoolTagKey   { default = "application" }
@@ -14,6 +14,12 @@ variable applicationPoolTagValue { default = "www-v0.0.1" }
 
 
 #### RESOURCES ####
+
+terraform {
+  backend "local" {
+    path = "/var/tmp/f5-demo-app-terraform/terraform.tfstate"
+  }
+}
 
 
 provider "bigip" {

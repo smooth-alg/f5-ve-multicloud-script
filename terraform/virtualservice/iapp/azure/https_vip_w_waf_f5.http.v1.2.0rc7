@@ -1,41 +1,11 @@
 {
-    "kind": "tm:sys:application:service:servicestate",
-    "name": "www_demo_f5example_com",
-    "partition": "Common",
-    "subPath": "www_demo_f5example_com.app",
-    "fullPath": "/Common/www_demo_f5example_com.app/www_demo_f5example_com",
-    "generation": 18774,
-    "selfLink": "https://localhost/mgmt/tm/sys/application/service/~Common~www_demo_f5example_com.app~www_demo_f5example_com?ver=13.0.0",
-    "deviceGroup": "/Common/autoscale-group",
-    "deviceGroupReference": {
-        "link": "https://localhost/mgmt/tm/cm/device-group/~Common~autoscale-group?ver=13.0.0"
-    },
-    "inheritedDevicegroup": "true",
-    "inheritedTrafficGroup": "false",
-    "strictUpdates": "disabled",
-    "template": "/Common/f5.http.v1.2.0rc7",
-    "templateReference": {
-        "link": "https://localhost/mgmt/tm/sys/application/template/~Common~f5.http.v1.2.0rc7?ver=13.0.0"
-    },
-    "templateModified": "no",
-    "trafficGroup": "/Common/traffic-group-1",
-    "trafficGroupReference": {
-        "link": "https://localhost/mgmt/tm/cm/traffic-group/~Common~traffic-group-1?ver=13.0.0"
-    },
-    "lists": [
-        {
-            "name": "asm__security_logging",
-            "encrypted": "no"
-        },
-        {
-            "name": "irules__irules",
-            "encrypted": "no"
-        },
-        {
-            "name": "local_traffic__policies",
-            "encrypted": "no"
-        }
-    ],
+  "name": "${service_name}",
+  "partition": "Common",
+  "inheritedDevicegroup": "true",
+  "inheritedTrafficGroup": "true",
+  "strictUpdates": "disabled",
+  "template": "/Common/f5.http.v1.2.0rc7",
+  "execute-action": "definition",
     "tables": [
         {
             "name": "basic__snatpool_members"
@@ -47,14 +17,14 @@
             "name": "optimizations__hosts"
         },
         {
-            "name": "pool__hosts",
             "columnNames": [
                 "name"
             ],
+            "name": "pool__hosts",
             "rows": [
                 {
                     "row": [
-                        "www.demo.f5example.com"
+                        "${service_name}"
                     ]
                 }
             ]
@@ -65,33 +35,38 @@
     ],
     "variables": [
         {
-            "name": "asm__language",
             "encrypted": "no",
+            "name": "pool__addr",
+            "value": "${vs_address}"
+        },
+        {
+            "encrypted": "no",
+            "name": "asm__language",
             "value": "utf-8"
         },
         {
+            "encrypted": "no",
             "name": "asm__use_asm",
-            "encrypted": "no",
-            "value": "/Common/app-ltm-policy"
+            "value": "/${partition}/${ltm_policy_name}"
         },
         {
+            "encrypted": "no",
             "name": "client__http_compression",
-            "encrypted": "no",
             "value": "/#create_new#"
         },
         {
+            "encrypted": "no",
             "name": "client__standard_caching_without_wa",
-            "encrypted": "no",
             "value": "/#create_new#"
         },
         {
+            "encrypted": "no",
             "name": "client__tcp_wan_opt",
-            "encrypted": "no",
             "value": "/#create_new#"
         },
         {
-            "name": "monitor__monitor",
             "encrypted": "no",
+            "name": "monitor__monitor",
             "value": "/#create_new#"
         },
         {
@@ -100,127 +75,132 @@
             "value": "200"
         },
         {
-            "name": "monitor__uri",
             "encrypted": "no",
+            "name": "monitor__uri",
             "value": "/"
         },
         {
-            "name": "net__client_mode",
             "encrypted": "no",
+            "name": "net__client_mode",
             "value": "wan"
         },
         {
+            "encrypted": "no",
             "name": "net__route_to_bigip",
-            "encrypted": "no",
             "value": "no"
         },
         {
+            "encrypted": "no",
             "name": "net__same_subnet",
-            "encrypted": "no",
             "value": "no"
         },
         {
-            "name": "net__server_mode",
             "encrypted": "no",
+            "name": "net__server_mode",
             "value": "lan"
         },
         {
-            "name": "net__snat_type",
             "encrypted": "no",
+            "name": "net__snat_type",
             "value": "automap"
         },
         {
-            "name": "net__vlan_mode",
             "encrypted": "no",
+            "name": "net__vlan_mode",
             "value": "all"
         },
         {
-            "name": "pool__addr",
             "encrypted": "no",
-            "value": "0.0.0.0/0"
-        },
-        {
             "name": "pool__http",
-            "encrypted": "no",
             "value": "/#create_new#"
         },
         {
-            "name": "pool__mask",
-            "encrypted": "no"
+            "encrypted": "no",
+            "name": "pool__mask"
         },
         {
-            "name": "pool__persist",
             "encrypted": "no",
+            "name": "pool__persist",
             "value": "/#cookie#"
         },
         {
             "name": "pool__pool_to_use",
             "encrypted": "no",
-            "value": "/Common/www_demo_f5example_com_service_discovery.app/www_demo_f5example_com_service_discovery_pool"
+            "value": "${application_poolName}"
         },
         {
-            "name": "pool__port",
             "encrypted": "no",
-            "value": "80"
-        },
-        {
             "name": "pool__port_secure",
-            "encrypted": "no",
-            "value": "443"
+            "value": "${vs_port}"
         },
         {
+            "encrypted": "no",
             "name": "pool__redirect_to_https",
-            "encrypted": "no",
             "value": "no"
         },
         {
+            "encrypted": "no",
             "name": "pool__xff",
-            "encrypted": "no",
             "value": "yes"
         },
         {
-            "name": "server__ntlm",
             "encrypted": "no",
+            "name": "server__ntlm",
             "value": "/#do_not_use#"
         },
         {
+            "encrypted": "no",
             "name": "server__oneconnect",
-            "encrypted": "no",
             "value": "/#create_new#"
         },
         {
+            "encrypted": "no",
             "name": "server__tcp_lan_opt",
-            "encrypted": "no",
             "value": "/#create_new#"
         },
         {
-            "name": "server__tcp_req_queueing",
             "encrypted": "no",
+            "name": "server__tcp_req_queueing",
             "value": "no"
         },
         {
-            "name": "ssl__mode",
             "encrypted": "no",
-            "value": "no_ssl"
+            "name": "ssl__mode",
+            "value": "client_ssl"
         },
         {
-            "name": "ssl__use_chain_cert",
             "encrypted": "no",
+            "name": "ssl__client_ssl_profile",
+            "value": "/#create_new#"
+        },
+        {
+            "encrypted": "no",
+            "name": "ssl__cert",
+            "value": "/Common/${client_ssl_cert_name}.crt"
+        },
+        {
+            "encrypted": "no",
+            "name": "ssl__key",
+            "value": "/Common/${client_ssl_cert_name}.key"
+        },
+        {
+            "encrypted": "no",
+            "name": "ssl__use_chain_cert",
             "value": "/#do_not_use#"
         },
         {
-            "name": "ssl_encryption_questions__advanced",
             "encrypted": "no",
+            "name": "ssl_encryption_questions__advanced",
             "value": "yes"
         },
         {
-            "name": "ssl_encryption_questions__help",
             "encrypted": "no",
+            "name": "ssl_encryption_questions__help",
             "value": "hide"
         },
         {
-            "name": "stats__request_logging",
             "encrypted": "no",
+            "name": "stats__request_logging",
             "value": "/Common/request-log"
         }
     ]

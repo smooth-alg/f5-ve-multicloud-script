@@ -17,7 +17,7 @@ variable applicationPoolTagValue { default = "www-v0.0.1" }
 
 terraform {
   backend "local" {
-    path = "/var/tmp/f5-demo-app-terraform/terraform.tfstate"
+    path = "/var/tmp/f5-demo-app-terraform-aws/terraform.tfstate"
   }
 }
 

@@ -9,7 +9,7 @@
 #export TF_LOG=DEBUG;
 export BASE_DIR=`pwd`;
 # folder in git repo
-export DIR=terraform/virtualservice/iapp;
+export DIR=terraform/virtualservice/iapp/gce;
 cd $BASE_DIR/$DIR;
 
 # Initialize terraform custom F5 provider

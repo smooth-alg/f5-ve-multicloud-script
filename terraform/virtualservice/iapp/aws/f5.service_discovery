@@ -6,7 +6,7 @@
   "strictUpdates": "disabled",
   "template": "/Common/f5.service_discovery",
   "execute-action": "definition",
-    "variables": [
+  "variables": [
         {
             "name": "basic__advanced",
             "encrypted": "no",
@@ -20,7 +20,7 @@
         {
             "name": "cloud__aws_region",
             "encrypted": "no",
-            "value": "/#default#"
+            "value": "${aws_region}"
         },
         {
             "name": "cloud__aws_use_role",

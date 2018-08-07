@@ -11,7 +11,7 @@ variable client_ssl_cert_name    { default = "default"   }
 variable ltm_policy_name         { default = "app-ltm-policy" }
 variable applicationPoolTagKey   { default = "application" }
 variable applicationPoolTagValue { default = "www-v0.0.1" }
-
+variable gce_region              { default = "us-west1" }
 
 #### RESOURCES ####
 
@@ -37,6 +37,7 @@ data "template_file" "iApp_sd_json_payload" {
   vars {
     partition                 = "${var.partition}"
     service_name              = "${var.service_name}"
+    gce_region                = "${var.gce_region}"
     applicationPoolTagKey     = "${var.applicationPoolTagKey}"
     applicationPoolTagValue   = "${var.applicationPoolTagValue}"
   }

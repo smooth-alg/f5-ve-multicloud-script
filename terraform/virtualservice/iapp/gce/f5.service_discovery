@@ -18,14 +18,14 @@
             "value": "hide"
         },
         {
-            "name": "cloud__gce_region",
-            "encrypted": "no",
-            "value": "/#default#"
-        },
-        {
             "name": "cloud__cloud_provider",
             "encrypted": "no",
             "value": "gce"
+        },
+        {
+            "name": "cloud__gce_region",
+            "encrypted": "no",
+            "value": "${gce_region}"
         },
         {
             "name": "monitor__frequency",

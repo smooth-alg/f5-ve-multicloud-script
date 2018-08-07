@@ -12,9 +12,9 @@ variable ltm_policy_name         { default = "app-ltm-policy" }
 variable applicationPoolTagKey   { default = "application" }
 variable applicationPoolTagValue { default = "www-v0.0.1" }
 
+variable azure_resource_group    { default = "none" }
 variable azure_subscription_id   { default = "none" }
 variable azure_tenant_id         { default = "none" }
-variable azure_resource_group    { default = "none" }
 variable azure_client_id         { default = "none" }
 variable azure_sp_secret         { default = "none" }
 
@@ -45,6 +45,11 @@ data "template_file" "iApp_sd_json_payload" {
     service_name              = "${var.service_name}"
     applicationPoolTagKey     = "${var.applicationPoolTagKey}"
     applicationPoolTagValue   = "${var.applicationPoolTagValue}"
+    azure_resource_group      = "${var.azure_resource_group}"
+    azure_subscription_id     = "${var.azure_subscription_id}"
+    azure_tenant_id           = "${var.azure_tenant_id}"    
+    azure_client_id           = "${var.azure_client_id}"
+    azure_sp_secret           = "${var.azure_sp_secret}"
   }
 }
 

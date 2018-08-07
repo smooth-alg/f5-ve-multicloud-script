@@ -20,6 +20,3 @@ terraform_command="terraform apply -lock=false -auto-approve";
 
 echo "${terraform_command} $@";
 ${terraform_command} $@
-
-
-

@@ -6,106 +6,114 @@
   "strictUpdates": "disabled",
   "template": "/Common/f5.service_discovery",
   "execute-action": "definition",
-    "variables": [
+  "variables": [
         {
-            "name": "basic__advanced",
             "encrypted": "no",
+            "name": "basic__advanced",
             "value": "no"
         },
         {
-            "name": "basic__display_help",
             "encrypted": "no",
+            "name": "basic__display_help",
             "value": "hide"
         },
         {
-            "name": "cloud__cloud_provider",
             "encrypted": "no",
+            "name": "cloud__azure_client_id",
+            "value": "${azure_subscription_id}"
+        },
+        {
+            "encrypted": "no",
+            "name": "cloud__azure_resource_group",
+            "value": "${azure_resource_group}"
+        },
+        {
+            "encrypted": "yes",
+            "name": "cloud__azure_sp_secret",
+            "value": "${azure_sp_secret}"
+        },
+        {
+            "encrypted": "no",
+            "name": "cloud__azure_subscription_id",
+            "value": "${azure_subscription_id}"
+        },
+        {
+            "encrypted": "no",
+            "name": "cloud__azure_tenant_id",
+            "value": "${azure_tenant_id}"
+        },
+        {
+            "encrypted": "no",
+            "name": "cloud__cloud_provider",
             "value": "azure"
         },
         {
-            "name": "cloud__azure_resource_group", 
-            "value": "${azure_resource_group}"
-        },
-        { 
-            "name": "cloud__azure_subscription_id", 
-            "value": "${azure_subscription_id}" 
-        }, 
-        { 
-            "name": "cloud__azure_tenant_id", 
-            "value": "${azure_tenant_id}" 
-        }, 
-        { 
-            "name": "cloud__azure_client_id",
-            "value": "${azure_client_id}"
-        }, 
-        { 
-            "name": "cloud__azure_sp_secret",
-            "value": “${azure_sp_secret}",
-            "encrypted": "yes"
-        },
-        {
-            "name": "monitor__frequency",
             "encrypted": "no",
+            "name": "monitor__frequency",
             "value": "30"
         },
         {
-            "name": "monitor__http_method",
             "encrypted": "no",
+            "name": "monitor__http_method",
             "value": "GET"
         },
         {
-            "name": "monitor__http_version",
             "encrypted": "no",
-            "value": "http10"
+            "name": "monitor__http_version",
+            "value": "http11"
         },
         {
-            "name": "monitor__monitor",
             "encrypted": "no",
+            "name": "monitor__monitor",
             "value": "/#create_new#"
         },
         {
-            "name": "monitor__response",
             "encrypted": "no",
-            "value": "200"
+            "name": "monitor__response"
         },
         {
-            "name": "monitor__uri",
             "encrypted": "no",
+            "name": "monitor__type",
+            "value": "http"
+        },
+        {
+            "encrypted": "no",
+            "name": "monitor__uri",
             "value": "/"
         },
         {
-            "name": "pool__interval",
             "encrypted": "no",
+            "name": "pool__interval",
             "value": "15"
         },
         {
-            "name": "pool__member_conn_limit",
             "encrypted": "no",
+            "name": "pool__member_conn_limit",
             "value": "0"
         },
         {
-            "name": "pool__member_port",
             "encrypted": "no",
+            "name": "pool__member_port",
             "value": "80"
         },
         {
-            "name": "pool__pool_to_use",
             "encrypted": "no",
+            "name": "pool__pool_to_use",
             "value": "/#create_new#"
         },
         {
-            "name": "pool__public_private",
             "encrypted": "no",
+            "name": "pool__public_private",
             "value": "private"
         },
         {
-            "name": "pool__tag_key",
             "encrypted": "no",
+            "name": "pool__tag_key",
             "value": "${applicationPoolTagKey}"
         },
         {
-            "name": "pool__tag_value",
             "encrypted": "no",
+            "name": "pool__tag_value",
             "value": "${applicationPoolTagValue}"
         }
     ]

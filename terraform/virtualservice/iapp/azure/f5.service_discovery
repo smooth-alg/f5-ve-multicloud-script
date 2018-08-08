@@ -20,7 +20,7 @@
         {
             "encrypted": "no",
             "name": "cloud__azure_client_id",
-            "value": "${azure_subscription_id}"
+            "value": "${azure_client_id}"
         },
         {
             "encrypted": "no",

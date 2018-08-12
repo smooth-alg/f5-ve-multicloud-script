@@ -30,7 +30,7 @@ applicationPoolTagValue: "dev-pm-demo-application-appAutoscaleGroup-J6CION6HARDT
 
 sd_iApp_service_name: "{{ service_name }}_sd"
 sd_iApp_template_name: "f5.service_discovery"
-sd_jinja_template_name: "{{ sd_iApp_template_name + cloud_provider + '.j2' }}"
+sd_jinja_template_name: "{{ sd_iApp_template_name + '_' + cloud_provider + '.j2' }}"
 
 # Pool Name ex.
 # /Common/www_demo_f5example_com_service_discovery.app/www_demo_f5example_com_service_discovery_pool

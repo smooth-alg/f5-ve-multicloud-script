@@ -1,5 +1,4 @@
 ---
-install_path: "/var/tmp/ansible"
 # iAPP VARS
 # SERVICE VARS
 service: "www.demo.f5example.com"

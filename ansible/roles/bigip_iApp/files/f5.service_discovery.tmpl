@@ -1,0 +1,826 @@
+sys application template /Common/f5.service_discovery {
+    actions {
+        definition {
+            html-help {
+                <p><b>Service Discovery Template</b></p>
+<p>This template creates a complete configuration for updating pool members based on auto-scaled cloud application hosts. Before you start: </p>
+<ul>
+    <li>All of the help for this iApp template is found inline. Select <b>Yes, show inline help</b> from the inline help question.</li>
+    <li>Check System :: Resource Provisioning to ensure that LTM (local traffic manager) is provisioned.</li>
+    <li>Set up VLANs to the servers containing the applications your clients will access.</li>
+</ul>
+            }
+            implementation {
+                package require iapp 1.3.0
+
+                set cloud_libs_min_version 4.3.0
+                set aws_provider_min_version 2.2.0
+                set azure_provider_min_version 2.3.0
+                set gce_provider_min_version 2.2.0
+
+                proc verify_hash { file_path } {
+                    if {[catch {
+
+                        set hashes(f5-cloud-libs.tar.gz) 8f401c7d8fda8f50b78db5b61f002653a05f59bdd4bd8f54711dda01933c1042c204b285b4617eca45e71676da3865233687f9b27ab2bafa1072cbba2513b8e2
+                        set hashes(f5-cloud-libs-aws.tar.gz) da3cab163e7a070237443159fe7440b30e1ccff922442634758c7cf9d48f7343fb401be79cae717d44b74cdc43d42b11daac8e9462f05e0321f9de338617f30c
+                        set hashes(f5-cloud-libs-azure.tar.gz) 8751e26b785baa5f8492836285cb05989d160c4c23b1bf545204391aec05f1fee82e0bc12333fd542ae7dc05c70bbce56bb99287b694c1608167377ec3b9b2c4
+                        set hashes(f5-cloud-libs-gce.tar.gz) 67e9fef439851ad4f9fbaf3f3574dadb2fceea0b13a77ccde41bcf31c42f87d6c37c64d50d685fc9a90acedc8c80abee9114b9a232809f36746bdc8e1de1b22a
+
+                        set file_name [file tail $file_path]
+
+                        if { ![info exists hashes($file_name)] } {
+                            tmsh::log err "No hash found for $file_name"
+                            error "No hash found for $file_name"
+                            exit 1
+                        }
+
+                        set expected_hash $hashes($file_name)
+                        set computed_hash [lindex [exec /usr/bin/openssl dgst -r -sha512 $file_path] 0]
+                        if { $expected_hash ne $computed_hash } {
+                            tmsh::log err "Invalid hash for $file_name"
+                            error "Invalid hash for $file_name"
+                            exit 1
+                        }
+                    } err ]} {
+                        tmsh::log err "Unexpected error in verifyHash: $err"
+                        error "Unexpected error in verifyHash: $err"
+                        exit 1
+                    }
+                }
+
+                proc compare_versions { version1 version2 } {
+                    set version1_parts [split $version1 .]
+                    set version2_parts [split $version2 .]
+
+                    if  { $version1 eq $version2 } {
+                        return 0
+                    }
+
+                    set index 0
+                    while { [lindex $version1_parts $index] == [lindex $version2_parts $index] } {
+                        if { $index == [llength $version1_parts] } {
+                            break
+                        }
+                        set index [expr {$index + 1}]
+                    }
+
+                    if { $index == [llength $version1_parts] } {
+                        return 0
+                    }
+
+                    if { [lindex $version1_parts $index] > [lindex $version2_parts $index] } {
+                        return 1
+                    }
+
+                    if { [lindex $version1_parts $index] == [lindex $version2_parts $index] } {
+                        return 0
+                    }
+
+                    return -1
+                }
+
+                proc get_installed_version { path file_name } {
+                    set version {}
+                    if { [string match */node_modules/* $path] } {
+                        # if it's a node module...
+                        set version [exec /bin/cat $path/package.json | /usr/bin/jq -r .version]
+                    } else {
+                        puts "Unknown file type $path $file_name"
+                    }
+                    return $version
+                }
+
+                proc download { url file_name dest_path } {
+                    set download_dir /var/config/rest/downloads
+                    set mgmt_port [tmsh::get_config sys httpd ssl-port]
+                    set mgmt_port [regexp -all -inline {\d+} $mgmt_port]
+
+                    set download_path $download_dir/$file_name
+
+                    if { [catch {
+                        exec /bin/mkdir -p $dest_path
+
+                        puts "Downloading $url"
+                        exec /usr/bin/curl -s -o $download_path $url
+
+                        puts "Verifying $download_path"
+                        verify_hash $download_path
+
+                        puts "Installing $download_path"
+                        if { [string match *.tar.gz $file_name] } {
+                            exec /bin/tar xzf $download_path --directory $dest_path --warning=no-timestamp
+                        } else {
+                            tmsh::log err "Unknown file type $full_path"
+                            error "Unknown file type $full_path"
+                            exit 1
+                        }
+                    } err ]} {
+                        tmsh::log err "Error installing $url: $err"
+                        error "Error installing $url: $err"
+                        exit 1
+                    }
+                }
+
+                proc is_install_required { dependencies template_install_prefix sd_install_prefix } {
+                    set needs_install 0
+
+                    # figure out if we need to install anything
+                    foreach dependency $dependencies {
+                        set path [lindex $dependency 0]
+                        set min_version [lindex $dependency 1]
+                        set download_url [lindex $dependency 2]
+
+                        set sd_path [string map "$template_install_prefix $sd_install_prefix" $path]
+                        set file_name [file tail $download_url]
+
+                        puts "checking $path and $sd_path"
+                        if { ![file exists $path] && ![file exists $sd_path] } {
+                            # if the file doesn't exist at all, download it
+                            puts "$path does not exist. Will install."
+                            set needs_install 1
+                        } else {
+                            # check to see if a recent enough version is installed
+
+                            if { [file exists $path] } {
+                                set path_to_check $path
+                            } else {
+                                set path_to_check $sd_path
+                            }
+
+                            set installed_version [get_installed_version $path_to_check $file_name]
+
+                            if { [string length $installed_version] == 0 } {
+                                puts "Could not get version of $path_to_check $file_name"
+                                exit 1
+                            }
+
+                            if { [compare_versions $installed_version $min_version] < 0 } {
+                                puts "$path_to_check $file_name is too old. Will install."
+                                set needs_install 1
+                            }
+                        }
+                    }
+
+                    return $needs_install
+                }
+
+                proc install_dependencies { cloud_provider } {
+                    puts "Checking dependencies"
+
+                    upvar 1 cloud_libs_min_version cloud_libs_min_version
+                    upvar 1 aws_provider_min_version aws_provider_min_version
+                    upvar 1 azure_provider_min_version azure_provider_min_version
+                    upvar 1 gce_provider_min_version gce_provider_min_version
+
+                    set common_install_prefix /config/cloud
+                    set template_install_prefix $common_install_prefix/$cloud_provider
+                    set sd_install_prefix $common_install_prefix/iapps/service_discovery
+
+                    set template_install_dir $template_install_prefix/node_modules/@f5devcentral
+
+                    switch $cloud_provider {
+                        aws {
+                            set provider_min_version $aws_provider_min_version
+                        }
+                        azure {
+                            set provider_min_version $azure_provider_min_version
+                        }
+                        gce {
+                            set provider_min_version $gce_provider_min_version
+                        }
+                    }
+
+                    set cloud_libs_tag release-$cloud_libs_min_version
+                    set provider_tag release-$provider_min_version
+#                    set cloud_libs_tag v$cloud_libs_min_version
+#                    set provider_tag v$provider_min_version
+
+                    # each element in list is a list of 'location_to_search min_acceptable_version download_url'
+                    set dependencies [list \
+                        [list $template_install_dir/f5-cloud-libs                  $cloud_libs_min_version   https://cdn.f5.com/product/cloudsolutions/f5-cloud-libs/$cloud_libs_tag/f5-cloud-libs.tar.gz 0] \
+                        [list $template_install_dir/f5-cloud-libs-$cloud_provider  $provider_min_version     https://cdn.f5.com/product/cloudsolutions/f5-cloud-libs-$cloud_provider/$provider_tag/f5-cloud-libs-$cloud_provider.tar.gz 0] \
+                    ]
+
+                    set install_prefix {}
+
+                    if { [is_install_required $dependencies $template_install_prefix $sd_install_prefix] == 1 } {
+                        puts "Installing dependencies"
+                        set install_prefix $sd_install_prefix
+                        foreach dependency $dependencies {
+                            set path [lindex $dependency 0]
+                            set download_url [lindex $dependency 2]
+
+                            set sd_path [string map "$template_install_prefix $sd_install_prefix" $path]
+                            set file_name [file tail $download_url]
+
+                            set dest_path [file dirname $sd_path]
+                            download $download_url $file_name $dest_path
+                        }
+                    } else {
+                        # if a good version is installed, we need to know if we are using the
+                        # version installed by the template or the one installed by this iapp
+                        if { [file exists $sd_install_prefix] } {
+                            set install_prefix $sd_install_prefix
+                        } else {
+                            set install_prefix $template_install_prefix
+                        }
+                    }
+
+                    return $install_prefix
+                }
+
+                proc url_init {} {
+                    variable url_map
+                    variable url_alphanumeric a-zA-Z0-9
+                    for {set i 0} {$i <= 256} {incr i} {
+                        set c [format %c $i]
+                        if {![string match \[$url_alphanumeric\] $c]} {
+                            set url_map($c) %[format %.2x $i]
+                        }
+                    }
+                    # These are handled specially
+                    array set url_map { " " + \n %0d%0a }
+                }
+
+                proc url_encode { string } {
+                    variable url_map
+                    variable url_alphanumeric
+
+                    # The spec says: "non-alphanumeric characters are replaced by '%HH'"
+                    # 1 leave alphanumerics characters alone
+                    # 2 Convert every other character to an array lookup
+                    # 3 Escape constructs that are "special" to the tcl parser
+                    # 4 "subst" the result, doing all the array substitutions
+
+                    regsub -all \[^$url_alphanumeric\] $string {$url_map(&)} string
+                    # This quotes cases like $url_map([) or $url_map($) => $url_map(\[) ...
+                    regsub -all {[][{})\\]\)} $string {\\&} string
+                    return [subst -nocommand $string]
+                }
+
+                proc encrypt { data cloud_libs_base_dir } {
+                    append out_file /tmp/sd_creds_ [expr { int(rand() * 1000) }]
+                    exec /usr/bin/f5-rest-node $cloud_libs_base_dir/node_modules/@f5devcentral/f5-cloud-libs/scripts/encryptDataToFile --data $data --private-key-name serviceDiscoveryKey --out-file $out_file --symmetric
+
+                    set fp [open $out_file r]
+                    set encrypted [read $fp]
+                    close $fp
+                    exec rm $out_file
+
+                    return $encrypted
+                }
+
+                proc get_encrypt_provider_options { encrypted } {
+                    append options secretData:[exec echo $encrypted | jq -r .encryptedData],
+                    append options secretIv:[exec echo $encrypted | jq -r .iv],
+                    append options secretKey:[exec echo $encrypted | jq -r .encryptedKey],
+                    append options secretPrivateKeyName:[exec echo $encrypted | jq -r .privateKey.name],
+                    append options secretPrivateKeyFolder:[exec echo $encrypted | jq -r .privateKey.folder]
+                }
+
+                iapp::template start
+
+                set cloud_libs_base_dir [install_dependencies $::cloud__cloud_provider]
+                url_init
+
+                exec /bin/mkdir -p /var/log/cloud/service_discovery
+
+                # constants
+                set YES_ANSWER "yes"
+                set NO_ANSWER "no"
+                set CREATE_NEW_ANSWER "/#create_new#"
+                set DEFAULT_ANSWER "/#default#"
+
+                set app $tmsh::app_name
+                set advanced [expr { [iapp::is ::basic__advanced $YES_ANSWER] }]
+                set lb_lcm_licensed [expr {[string first ltm_lb_least_conn [tmsh::show sys license detail]] != -1}]
+
+                # MONITOR SEND STRING
+                # only the first FQDN in the hosts table is used for monitoring
+                set hostname   [lindex [join [join [expr { [info exists ::pool__hosts] \
+                               ? "$::pool__hosts" : "" }]]] 1]
+                set http10     [iapp::is ::monitor__http_version http10]
+                set http_post  [iapp::is ::monitor__http_method POST]
+
+                # array keys: $http10,$http_post
+                array set send_string_arr {
+                    1,1 { 'POST $::monitor__uri HTTP/1.0\\r\\nContent-Length: [string length $::monitor__post_body]\\r\\n\\r\\n$::monitor__post_body' }
+                    1,0 { 'GET $::monitor__uri HTTP/1.0\\r\\n\\r\\n' }
+                    0,1 { 'POST $::monitor__uri HTTP/1.1\\r\\nHost: $hostname\\r\\nContent-Length: [string length $::monitor__post_body]\\r\\nConnection: Close\\r\\n\\r\\n$::monitor__post_body' }
+                    *   { 'GET $::monitor__uri HTTP/1.1\\r\\nHost: $hostname\\r\\nConnection: Close\\r\\n\\r\\n'}
+                }
+
+                set partition [lindex [split [tmsh::pwd] /] 1]
+
+                # MONITOR
+                set new_monitor [iapp::is ::monitor__monitor $::CREATE_NEW_ANSWER]
+                set http_or_https [expr { [iapp::is ::monitor__type https] ? {https}:{http} }]
+
+                # array keys: $new_pool,$new_monitor
+                array set monitor_arr {
+                    1,1 { monitor [iapp::conf create ltm monitor $http_or_https \
+                        ${app}_${http_or_https}_monitor \
+                        defaults-from $http_or_https \
+                        interval $::monitor__frequency \
+                        timeout [expr { $::monitor__frequency * 3 + 1 } ] \
+                        send [iapp::substa send_string_arr($http10,$http_post)]\
+                        recv '$::monitor__response'] }
+                    1,0 { monitor $::monitor__monitor }
+                    *   { monitor none }
+                }
+
+                # POOL
+                # array keys: $advanced,$lb_lcm_licensed
+                array set pool_lb_method {
+                    0,0 { load-balancing-mode round-robin }
+                    0,1 { load-balancing-mode least-connections-member }
+                    *   { load-balancing-mode $::pool__lb_method_choice }
+                }
+
+                set new_pool [iapp::is ::pool__pool_to_use "/#create_new#"]
+                if { $new_pool } {
+                    set pool_name /${partition}/${app}.app/${app}_pool
+                } else {
+                    set pool_name $::pool__pool_to_use
+                }
+
+                # array keys: $new_pool,tcp
+                array set pool {
+                    1,tcp { pool [iapp::conf create ltm pool ${app}_pool \
+                                 [iapp::substa pool_lb_method($advanced,$lb_lcm_licensed)] \
+                                 [iapp::substa monitor_arr($new_pool,$new_monitor)] ] }
+
+                    *     { pool $::pool__pool_to_use }
+                }
+
+                iapp::substa pool($new_pool,tcp)
+
+                if { [iapp::is ::cloud__aws_bigip_in_ec2 $YES_ANSWER] } {
+                    set ::cloud__aws_access_key_id $DEFAULT_ANSWER
+                    set ::cloud__aws_secret_access_key $DEFAULT_ANSWER
+                }
+
+                if { [iapp::is ::cloud__gce_bigip_in_gc $YES_ANSWER] } {
+                    set ::cloud__gce_credentials_json_base64 $DEFAULT_ANSWER
+                }
+
+                if { [iapp::is ::cloud__aws_use_role $NO_ANSWER] } {
+                    set ::cloud__aws_role_arn $DEFAULT_ANSWER
+                    set ::cloud__aws_external_id $DEFAULT_ANSWER
+                }
+
+                switch $::cloud__cloud_provider {
+                    aws {
+                        append provider_options roleArn=$::cloud__aws_role_arn,
+                        append provider_options externalId=$::cloud__aws_external_id,
+
+                        if { [iapp::is ::cloud__aws_bigip_in_ec2 $NO_ANSWER] } {
+                            set encrypted [encrypt $::cloud__aws_secret_access_key $cloud_libs_base_dir]
+
+                            append provider_options region:$::cloud__aws_region_req,
+                            append provider_options accessKeyId:$::cloud__aws_access_key_id,
+                            append provider_options [get_encrypt_provider_options $encrypted]
+
+                        } else {
+                            append provider_options region:$::cloud__aws_region
+                        }
+                    }
+                    azure {
+                        set encrypted [encrypt $::cloud__azure_sp_secret $cloud_libs_base_dir]
+
+                        append provider_options resourceGroup:$::cloud__azure_resource_group,
+                        append provider_options subscriptionId:$::cloud__azure_subscription_id,
+                        append provider_options clientId:$::cloud__azure_client_id,
+                        append provider_options tenantId:$::cloud__azure_tenant_id,
+                        append provider_options [get_encrypt_provider_options $encrypted]
+                    }
+                    gce {
+                        if { [iapp::is ::cloud__gce_bigip_in_gc $NO_ANSWER] } {
+                            set encrypted [encrypt $::cloud__gce_credentials_json_base64 $cloud_libs_base_dir]
+
+                            append provider_options region:$::cloud__gce_region_req,
+                            append provider_options [get_encrypt_provider_options $encrypted]
+                        } else {
+                            append provider_options region:$::cloud__gce_region
+                        }
+                    }
+                }
+
+                set icall_script {
+                    if { [catch {
+                        # We might be in a cluster and on a BIG-IP that doesn't yet have the code,
+                        # so if we don't have it, re-deploy so that the code will be installed
+
+                        if { ![file isdirectory <CLOUD_LIBS_BASE_DIR>] } {
+                            exec /usr/bin/tmsh -c "modify sys application service <APP_NAME> \{ execute-action definition \}"
+                        }
+
+                        tmsh::modify sys application service <APP_NAME> strict-updates disabled
+                        set mgmt_port [tmsh::get_config sys httpd ssl-port]
+                        set mgmt_port [regexp -all -inline {\d+} $mgmt_port]
+
+                        set members [exec /bin/bash -c "NODE_JSON=\$(/usr/bin/f5-rest-node <CLOUD_LIBS_BASE_DIR>/node_modules/@f5devcentral/f5-cloud-libs/scripts/getNodes.js --cloud <CLOUD> --provider-options '<PROVIDER_OPTIONS>' --member-tag <MEMBER_TAG_KEY>=<MEMBER_TAG_VALUE> --member-address-type <ADDRESS_TYPE> --output /var/log/cloud/service_discovery/get_nodes.log);
+                            echo \$NODE_JSON | /usr/bin/jq -r 'if type == \"array\" then \[.\[\] | \"\\(.ip):<MEMBER_PORT> { address \\(.ip) description \\(.id) connection-limit <CONNECTION_LIMIT> }\"\]  | join (\" \") elif has(\"code\") then error(\"error from getNodes: \" + .message) else error(\"unxpected response from getNodes\") end'"]
+
+                        if { $members eq "" } {
+                            puts "Service Discovery: No matching members found"
+                        } elseif { [string first "jq: error:" $members] == 0 } {
+                            puts "Service Discovery: Error parsing nodes: $members"
+                        } else {
+                            tmsh::modify ltm pool <POOL_TO_USE> members replace-all-with \{ $members \}
+                        }
+                    } err ]} {
+                        tmsh::log err "Error querying for nodes: $err"
+                        exit
+                    }
+                }
+
+                set common_script_map "
+                    <CLOUD>               $::cloud__cloud_provider
+                    <CLOUD_LIBS_BASE_DIR> $cloud_libs_base_dir
+                    <APP_NAME>            /${partition}/${app}.app/${app}
+                    <POOL_TO_USE>         $pool_name
+                    <MEMBER_PORT>         $::pool__member_port
+                    <CONNECTION_LIMIT>    $::pool__member_conn_limit
+                    <MEMBER_TAG_KEY>      $::pool__tag_key
+                    <MEMBER_TAG_VALUE>    $::pool__tag_value
+                    <ADDRESS_TYPE>        $::pool__public_private
+                "
+
+                set provider_script_map "
+                    <PROVIDER_OPTIONS>  $provider_options
+                "
+
+                set mapped_script [string map $common_script_map $icall_script]
+                set mapped_script [string map $provider_script_map $mapped_script]
+                set mapped_script [regsub -all [url_encode $DEFAULT_ANSWER] $mapped_script '']
+                iapp::conf create sys icall script ${app}_service_discovery_icall_script \{ definition \{ $mapped_script \} description none events none \}
+                iapp::conf create sys icall handler periodic ${app}_service_discover_icall_handler \{ first-occurrence now interval $::pool__interval script ${app}_service_discovery_icall_script \}
+
+                iapp::template stop
+            }
+            macro {
+            }
+            presentation {
+                define choice lb_method display "xxlarge" tcl {
+                    if { [string first ltm_lb_least_conn [tmsh::show sys license detail]] != -1 } {
+                        set choices "Least Connections (member)\tleast-connections-member\nLeast Connections (node)\tleast-connections-node\nLeast Sessions\tleast-sessions\nFastest (application)\tfastest-app-response\nFastest (node)\tfastest-node\nObserved (member)\tobserved-member\nObserved (node)\tobserved-node\nPredictive (member)\tpredictive-member\nPredictive (node)\tpredictive-node\nRound Robin\tround-robin\nWeighted Least Connections (member)\tweighted-least-connections-member"
+                    } else {
+                        set choices "Round Robin\tround-robin"
+                    }
+                    return $choices
+                }
+
+                section intro {
+                    message intro
+                    message note
+                    message tag
+                    message tag1
+                    message tag2
+                    message tag3
+                    message tag4
+
+
+                    optional ( intro == "NEVER_SHOW_THIS" ) {
+                        choice isa_dmin tcl {
+                            package require iapp 1.1.3
+                            return [expr { [iapp::get_user -is_admin] ? "yes" : "no"}]
+                        }
+                    }
+                }
+
+                section basic {
+                    choice advanced display "xxlarge" default "no"
+                    choice display_help display "xxlarge" default "hide"
+                }
+
+                section cloud {
+                    choice cloud_provider display "xxlarge"
+                        optional ( basic.display_help == "max" ) {
+                            message cloud_provider_help
+                        }
+
+                    optional ( cloud_provider == "aws" ) {
+                        choice aws_bigip_in_ec2 default "yes" display "xxlarge"
+                            optional ( basic.display_help == "max" ) {
+                                message aws_bigip_in_ec2_help
+                            }
+                        optional ( aws_bigip_in_ec2 == "no" ) {
+                            string aws_access_key_id required display "xxlarge"
+                            password aws_secret_access_key required display "xxlarge"
+                            choice aws_region_req display "xxlarge"
+                        }
+                        optional ( aws_bigip_in_ec2 == "yes" ) {
+                            choice aws_region display "xxlarge"
+                        }
+                        optional ( basic.display_help == "max" ) {
+                            message aws_region_help
+                        }
+
+                        choice aws_use_role default "no" display "xxlarge"
+                            optional ( basic.display_help == "max" ) {
+                                message aws_use_role_help
+                            }
+                        optional ( aws_use_role == "yes" ) {
+                            string aws_role_arn required display "xxlarge"
+                            string aws_external_id required display "xxlarge"
+                        }
+                    }
+
+                    optional ( cloud_provider == "azure" ) {
+                         string azure_resource_group required display "xxlarge"
+                         optional ( basic.display_help == "max" ) {
+                            message azure_resource_group_help
+                        }
+                        string azure_subscription_id required display "xxlarge"
+                        string azure_tenant_id required display "xxlarge"
+                        string azure_client_id required display "xxlarge"
+                        password azure_sp_secret required display "xxlarge"
+                        optional ( basic.display_help == "max" ) {
+                             message azure_auth_help
+                        }
+                    }
+
+                    optional ( cloud_provider == "gce" ) {
+                        choice gce_bigip_in_gc default "yes" display "xxlarge"
+                            optional ( basic.display_help == "max" ) {
+                                message gce_bigip_in_gc_help
+                            }
+                        optional ( gce_bigip_in_gc == "no" ) {
+                            password gce_credentials_json_base64 required display "xxlarge"
+                            choice gce_region_req display "xxlarge"
+                        }
+                        optional ( gce_bigip_in_gc == "yes" ) {
+                            choice gce_region display "xxlarge"
+                        }
+                        optional ( basic.display_help == "max" ) {
+                            message gce_region_help
+                        }
+                    }
+                }
+
+                section pool {
+                    string tag_key required display "xxlarge"
+                        optional ( basic.display_help == "max" ) {
+                            message tag_key_help
+                        }
+                    string tag_value required display "xxlarge"
+                    choice public_private display "xxlarge" default "private" {
+                        "Public IP addresses" => "public" ,
+                        "Private IP addresses" => "private"
+                    }
+                    string interval required default "60"
+
+                    choice pool_to_use display "xxlarge" default "/#create_new#" tcl {
+                        package require iapp 1.0.0
+                        set ::choices "/#create_new#\n[iapp::get_items ltm pool]"
+                        return [iapp::safe_display ::choices]
+                    }
+                    optional ( basic.display_help == "max" ) {
+                        message pool_help
+                    }
+
+                    string member_port display "small" required default "80" validator "PortNumber"
+                    optional ( basic.display_help == "max" ) {
+                        message member_port_help
+                    }
+
+                    string member_conn_limit display "small" required default "0" validator "NonNegativeNumber"
+                    optional ( basic.display_help == "max" ) {
+                        message member_conn_limit_help
+                    }
+
+                    optional ( basic.advanced == "yes" ) {
+                        lb_method lb_method_choice
+
+                        optional ( basic.display_help == "max" ) {
+                            message lb_method_max
+                        }
+                    }
+                }
+
+                optional ( pool.pool_to_use == "/#create_new#" ) {
+
+                    section monitor {
+
+                        choice monitor display "xxlarge" default "/#create_new#" tcl {
+
+                            set ::choices "Create a new health monitor\t/#create_new#\n[iapp::get_items ltm monitor http]\n[iapp::get_items ltm monitor https]"
+                            return [iapp::safe_display ::choices]
+                        }
+                            optional ( basic.display_help == "max" ) {
+                                message monitor_help
+                            }
+                        optional ( monitor == "/#create_new#" ) {
+
+                            choice type display "xxlarge" default "http" {
+                                        "HTTP" => "http"  ,
+                                        "HTTPS" => "https"
+                            }
+                                optional ( basic.display_help == "max" ) {
+                                        message type_help
+                                }
+                            string uri display "xxlarge" required default "/"
+                                optional ( basic.display_help == "max" ) {
+                                    message uri_help
+                                }
+                            string frequency display "medium" required default "30" validator "NonNegativeNumber"
+                                optional ( basic.display_help == "max" ) {
+                                    message frequency_help
+                                }
+                            choice http_version display "xxlarge" default "http11" {
+                                        "HTTP/1.0" => "http10"  ,
+                                        "HTTP/1.1" => "http11"
+                            }
+                                optional ( basic.display_help == "max" ) {
+                                    message http_version_help
+                                }
+                            choice http_method display "xxlarge" default "GET" { "GET"  , "POST" }
+                                optional ( basic.display_help == "max" ) {
+                                    message http_method_help
+                                }
+                            optional ( http_method == "POST" ) {
+                                string post_body display "xxlarge" required
+
+                                optional ( basic.display_help == "max" ) {
+                                    message post_body_help
+                                }
+                            }
+                            string response display "xxlarge"
+                                optional ( basic.display_help == "max" ) {
+                                    message response_help
+                                }
+                        }
+                    }
+                }
+
+                text {
+                    intro "Welcome to the iApp template for Cloud Service Discovery"
+                    intro.intro "Introduction" "This iApp enables automatically updating pool members based on auto-scaled cloud application hosts.  Once you have tagged your cloud resources appropriately, complete this template and then the BIG-IP VE will programmatically discover (or remove) pool members based on the tags."
+                    intro.note "IMPORTANT" "This iApp uses the tag key and tag values you configure on your cloud provider to discover pool members. Make sure the tags and IP addresses you use are unique. You should not tag multiple nodes with the same key/tag combination if those nodes use the same IP address. See your cloud provider documentation for specific information on tagging."
+                    intro.tag "Tagging your cloud resources" "You have the following options for tagging nodes on your cloud provider."
+                    intro.tag1 "" " * Tag a VM resource:  If you tag a VM resource, the BIG-IP VE will discover the primary public or private IP address for the primary NIC configured for the tagged VM."
+                    intro.tag2 "" " * Tag a NIC resource:  If you tag a NIC resource, the BIG-IP VE will discover the primary public or private IP addresses for the tagged NIC.  Use this option if you want to use the secondary NIC of a VM in the pool."
+                    intro.tag3 "" " * (Azure only) Tag a Virtual Machine Scale Set resource:  If you tag a Scale Set resource, the BIG-IP VE will discover the primary private IP address for the primary NIC configured for each Scale Set instance.  Note you must select Private IP addresses if you are tagging a Scale Set."
+                    intro.tag4 "" "The iApp first looks for NIC resources with the tags you specify.  If it finds NICs with the proper tags, it does not look for VM resources. If it does not find NIC resources, it looks for VM resources with the proper tags. If you are using Microsoft Azure only: In either case, it then looks for Scale Set resources with the proper tags."
+
+                    basic "Template Options"
+                    basic.display_help "Do you want to see inline help?" {
+                        "Yes, show inline help" => "max",
+                        "No, do not show inline help" => "hide"
+                    }
+                    basic.advanced "Which configuration mode do you want to use?" {
+                        "Basic - Use F5's recommended settings" => "no",
+                        "Advanced - Configure advanced options" => "yes"
+                    }
+
+                    cloud "Cloud Provider"
+                    cloud.cloud_provider "In which cloud provider are the pool members deployed?" {
+                        "AWS EC2" => "aws",
+                        "Azure" => "azure",
+                        "Google Compute Engine" => "gce"
+                    }
+                    cloud.cloud_provider_help "" "Select the cloud in which the BIG-IP VE (Virtual Edition) you are configuring is running."
+
+                    cloud.aws_bigip_in_ec2 "Is your BIG-IP running in EC2?" {
+                        "Yes" => "yes",
+                        "No" => "no"
+                    }
+                    cloud.aws_bigip_in_ec2_help "" "If the BIG-IP is not running in EC2, we need to collect credentials."
+                    cloud.aws_access_key_id "What is your AWS acess key id?"
+                    cloud.aws_secret_access_key "What is your AWS secret access key?"
+
+                    cloud.aws_region "Which region do you want to search for pool members?" {
+                        "Default" => "/#default#",
+                        "US East (N. Virginia)" => "us-east-1",
+                        "US East (Ohio)" => "us-east-2",
+                        "US West (N. California)" => "us-west-1",
+                        "US West (Oregon)" => "us-west-2",
+                        "Canada (Central)" => "ca-central-1",
+                        "EU (Ireland)" => "eu-west-1",
+                        "EU (Frankfurt)" => "eu-central-1",
+                        "EU (London)" => "eu-west-2",
+                        "Asia Pacific (Tokyo)" => "ap-northeast-1",
+                        "Asia Pacific (Seoul)" => "ap-northeast-2",
+                        "Asia Pacific (Singapore)" => "ap-southeast-1",
+                        "Asia Pacific (Sydney)" => "ap-southeast-2",
+                        "Asia Pacific (Mumbai)" => "ap-south-1",
+                        "South America (São Paulo)" => "sa-east-1"
+                    }
+                    cloud.aws_region_req "Which region do you want to search for pool members?" {
+                        "US East (N. Virginia)" => "us-east-1",
+                        "US East (Ohio)" => "us-east-2",
+                        "US West (N. California)" => "us-west-1",
+                        "US West (Oregon)" => "us-west-2",
+                        "Canada (Central)" => "ca-central-1",
+                        "EU (Ireland)" => "eu-west-1",
+                        "EU (Frankfurt)" => "eu-central-1",
+                        "EU (London)" => "eu-west-2",
+                        "Asia Pacific (Tokyo)" => "ap-northeast-1",
+                        "Asia Pacific (Seoul)" => "ap-northeast-2",
+                        "Asia Pacific (Singapore)" => "ap-southeast-1",
+                        "Asia Pacific (Sydney)" => "ap-southeast-2",
+                        "Asia Pacific (Mumbai)" => "ap-south-1",
+                        "South America (São Paulo)" => "sa-east-1"
+                    }
+                    cloud.aws_region_help "" "Default is to search the same region in which the BIG-IP is running. If the BIG-IP is not running in EC2, you must select a region"
+                    cloud.aws_use_role "Do you want to assume a role?" {
+                        "Yes" => "yes",
+                        "No" => "no"
+                    }
+                    cloud.aws_use_role_help "" "Assuming a role is typically used for cross-account access (for example if your Application servers are in one account and the BIG-IP VE is in another). If you select Yes, you must specify the ARN and External ID in the following questions. See the AWS documentation for details."
+                    cloud.aws_role_arn "What is the role Amazon Resource Name (ARN)?"
+                    cloud.aws_external_id "What is the External ID?"
+
+                    cloud.azure_subscription_id "What is the subscription ID?"
+                    cloud.azure_tenant_id "What is the tenant ID?"
+                    cloud.azure_client_id "What is the client ID?"
+                    cloud.azure_sp_secret "What is the service principal secret?"
+                    cloud.azure_auth_help "" "Enter the service principal information used to search the Azure subscription for pool members. See https://docs.microsoft.com/en-us/azure/azure-resource-manager/resource-group-create-service-principal-portal for more information."
+                    cloud.azure_resource_group "What is the Azure resource group?"
+                    cloud.azure_resource_group_help "" "Type the name of the Azure resource group containing the tagged resources."
+
+                    cloud.gce_bigip_in_gc "Is your BIG-IP running in Google Cloud?" {
+                        "Yes" => "yes",
+                        "No" => "no"
+                    }
+                    cloud.gce_bigip_in_gc_help "" "If the BIG-IP is not running in Google Cloud, we need to collect credentials."
+                    cloud.gce_credentials_json_base64 "Enter the Base64 encoded credentials json"
+                    cloud.gce_region "Which region do you want to search?" {
+                        "Default" => "/#default#",
+                        "US East 1" => "us-east1",
+                        "US East 4" => "us-east4",
+                        "US Central 1" => "us-central-1",
+                        "US West 1" => "us-west1",
+                        "Europe West 1" => "eu-west1",
+                        "Europe West 2" => "eu-west2",
+                        "Europe West 3" => "eu-west3",
+                        "Asia Northeast 1" => "asia-northeast1",
+                        "Asia East 1" => "asia-east1",
+                        "Asia Southeast 1" => "asia-southeast1",
+                        "Australia Southeast 1" => "australia-southeast1"
+                    }
+                    cloud.gce_region_req "Which region do you want to search?" {
+                        "US East 1" => "us-east1",
+                        "US East 4" => "us-east4",
+                        "US Central 1" => "us-central-1",
+                        "US West 1" => "us-west1",
+                        "Europe West 1" => "eu-west1",
+                        "Europe West 2" => "eu-west2",
+                        "Europe West 3" => "eu-west3",
+                        "Asia Northeast 1" => "asia-northeast1",
+                        "Asia East 1" => "asia-east1",
+                        "Asia Southeast 1" => "asia-southeast1",
+                        "Australia Southeast 1" => "australia-southeast1"
+                    }
+                    cloud.gce_region_help "" "Default is to search the same region in which the BIG-IP is running."
+
+                    pool "Pool"
+                    pool.pool_to_use "Do you want to create a new pool or use an existing one?" {
+                        "Create a new pool..." => "/#create_new#"
+                    }
+                    pool.pool_help "" "A load balancing pool is a logical set of devices, such as application servers, grouped together to receive and process traffic. When clients attempt to access the application via the BIG-IP virtual server, the BIG-IP system distributes requests to any of the servers that are members of that pool.  If you select an existing pool, we strongly recommend you have at least one health monitor attached.The iApp does not create a health monitor for existing pools."
+                    pool.tag_key "What is the tag key on your cloud provider for the members of this pool?"
+                    pool.tag_key_help "" "Type the cloud provider tag key and tag value for the members of your pool. Servers with these values are added to your pool."
+                    pool.tag_value "What is the tag value on your cloud provider for the members of this pool?"
+                    pool.public_private "Do you want to search for public or private IP addresses?"
+                    pool.interval "How often do you want to query the cloud provider for updates (in seconds)?"
+                    pool.member_port "Which port should be assigned to the pool members?"
+                    pool.member_port_help "" "Type the port number you want assigned to the pool members.  Port 80 is the default."
+                    pool.member_conn_limit "Connection limit (optional)"
+                    pool.member_conn_limit_help "" "You can optionally specify a connection limit for the pool members.  When this limit is reached, the system no longer sends new connections to that member."
+                    pool.lb_method_choice "Which load balancing method do you want to use?"
+                    pool.lb_method_max "" "A load balancing method is an algorithm that the BIG-IP system uses to select a pool member for processing a request. F5 recommends the Least Connections load balancing method, where new connections are routed to the node that has the least number of current connections. This is ideal for environments in which pool members have similar performance and capacity capabilities."
+
+                    monitor "Application Health"
+                    monitor.monitor "Create a new health monitor or use an existing one?"
+                    monitor.monitor_help "" "Monitors are used to determine the health of each server. If server does not respond or responds incorrectly, the system will cease to send client requests to that server. The system will continue to monitor the instance and will begin sending requests once the server responds correctly."
+                    monitor.type "What monitor type should be used?"
+                    monitor.type_help "The monitor type selected will determine what type of monitor to create, such as HTTP or HTTPS"
+                    monitor.http_method "What type of HTTP request should be sent to the servers?"
+                    monitor.http_method_help "" "The HTTP request type determines which HTTP method the monitor sends to the server. GET is the most common request type for web applications."
+                    monitor.uri "What HTTP URI should be sent to the servers?"
+                    monitor.uri_help "" "The HTTP URI is used to specify the resource on the server for a given request. This parameter can be customized to request a specific part of an application, which can indicate the health of the application on a granular level."
+                    monitor.http_version "Which HTTP version do your servers expect clients to use?"
+                    monitor.http_version_help "" "The HTTP version can be customized so it matches what a typical client would be using, in order to detect failures in the most meaningful way. HTTP/1.0 and HTTP/1.1 are the most common.  HTTP/1.0 is more simple, while HTTP/1.1 offers more features."
+                    monitor.frequency "How many seconds should pass between health checks?"
+                    monitor.frequency_help "" "This is the duration, in seconds, of a single monitor cycle. At this interval, the system checks the health of the server in the pool."
+                    monitor.response "What is the expected response to the HTTP request?"
+                    monitor.response_help "" "When the HTTP response arrives for a monitor request, its contents are searched for the value specified here. If it is not found, the monitoring attempt fails."
+                    monitor.post_body "What HTTP POST body do you want to use for this monitor?"
+                    monitor.post_body_help "" "POST requests require an HTTP POST body to send to the server."
+                }
+            }
+            role-acl { admin manager resource-admin }
+            run-as none
+        }
+    }
+    description none
+    ignore-verification false
+    requires-bigip-version-max none
+    requires-bigip-version-min 12.1.0
+    requires-modules { ltm }
+    signing-key /Common/f5-irule
+    tmpl-checksum none
+    tmpl-signature eeBM2IsxLz6NlDABrBtd76h0s3L/9Av1I5TrNficfeTJ4vog7FCMa/yG5Vrb3OK+QTBgMp+PhED5Ri1NCZJvJK95n6wKu2NY1TgoH87e4Z7hI1ADgt3Dsj+dD8ZIsWNhyV6VjeL2enw/WUCDGFP+AFqAUh7R1HlyMsNbUEyVIt88ZhYv/OQbyYiZDrrJK25FphS4o2294k149qXGqtlkm5LDJVZrn6npzxiTsslCJSUbGqZI8R+8rqocup1rWuezWoEHSNEhpIYSCtC8JQY6brdridmS6d2LHhZeqhH6BkhB3+hQHtRjEjNpK4chqik/kI5EbO5st7nlVFDkZvQ8wg==
+}

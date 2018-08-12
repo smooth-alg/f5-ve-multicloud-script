@@ -1,0 +1,35 @@
+---
+### DEPLOY AN VIRTUAL SERVICE FROM AN IAPP IN ANSIBLE
+
+# Ensure deployment specific directory exists
+- hosts: localhost
+  connection: local
+  gather_facts: False
+  tasks:
+    - name: create directory for environment/deployment
+      file: path=../state_cache/{{deploymentName}} state=directory
+
+
+# Uses Dynamic Inventory to discover Instance IPs
+# - hosts: bigips
+- hosts: bigips
+  connection: local
+  gather_facts: False
+  environment:
+      F5_SERVER: "{{ ansible_ssh_host }}"
+      F5_USER: "{{ bigip_rest_user }}"
+      F5_PASSWORD: "{{ bigip_rest_password }}"  #Inherit from vault
+      F5_SERVER_PORT: "{{ bigip_port }}"
+      F5_VALIDATE_CERTS: "{{ validate_certs }}"
+  # pre_tasks:
+  #   - name: Set iApp specific variables if not inheriting
+  #     set_fact:
+  #         service_name: example
+  roles:
+    - bigip_iApp
+  post_tasks:
+    - name: Save the running BIG-IP configuration to disk
+      delegate_to: localhost
+      bigip_config:
+        save: True
+      register: result

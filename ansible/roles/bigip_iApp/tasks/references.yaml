@@ -1,0 +1,73 @@
+---
+
+# - name: Install iApp Template for Service Discovery of Pool Members
+#   delegate_to: localhost
+#   bigip_iapp_template:
+#     state: "present"
+#     content: "{{ lookup('file', sd_iApp_template_name + '.tmpl') }}"
+#     force: yes
+#     partition: "{{partition}}"
+
+# Generate the Service Discovery iApp Playload we will deploy from a template 
+- name: Modify Service Discovery iApp Payload to interpolate variables
+  template: src="{{ sd_jinja_template_name }}" dest="{{ install_path }}/state_cache/{{ deploymentName }}/iApp-{{ sd_iApp_service_name }}.json"
+  delegate_to: localhost
+
+- name: Deploy Service Discovery iApp 
+  delegate_to: localhost
+  bigip_iapp_service:
+      state: "present"
+      name: "{{ sd_iApp_service_name }}"
+      partition: "{{partition}}"
+      template: "/Common/{{ sd_iApp_template_name }}"
+      parameters: "{{ lookup('file', install_path + '/state_cache/' + deploymentName + '/iApp-' + sd_iApp_service_name + '.json') }}"
+      strict_updates: "{{ strict_updates }}"
+  register: result
+
+- name: Building REST payload for the asm loggging profile to remote analytics server
+  template: src="asm_logging_profile_payload.j2" dest="{{ install_path }}/state_cache/{{ deploymentName }}/asm_logging_profile_payload-{{ service }}.json"
+  delegate_to: localhost
+
+- name: Deploying updating ASM Logging Profile to send to Remote Analytics Server
+  delegate_to: localhost
+  bigip_rest_wrapper:
+      state="present"
+      host={{ ansible_ssh_host }}
+      port={{ bigip_port }}
+      user={{ bigip_rest_user }}
+      password={{ bigip_rest_password }}
+      partition={{partition}}
+      collection_path="mgmt/tm/security/log/profile"
+      payload_file="{{ install_path }}/state_cache/{{ deploymentName }}/asm_logging_profile_payload-{{ service }}.json"
+      resource_key="name"
+
+- name: Import and activate ASM policy
+  delegate_to: localhost
+  bigip_asm_policy:
+    name: "{{ asm_policy_name }}"
+    partition: "{{ partition }}"
+    file: "{{ role_path }}/files/asm-policy-{{asm_policy_name}}.xml"
+    active: yes
+    state: present
+
+- name: Create policy which is immediately published
+  delegate_to: localhost
+  bigip_policy:
+    name: "{{ ltm_policy_name }}"
+    partition: "{{ partition }}"
+    state: present
+
+- name: Add a rule to the new policy - Immediately published
+  delegate_to: localhost
+  bigip_policy_rule:
+    state: present
+    policy: "{{ ltm_policy_name }}"
+    name: rule-1
+    actions:
+      - type: enable
+        asm_policy: "/{{ partition }}/{{ asm_policy_name }}"
+    conditions:
+      - type: all_traffic
+
+
+

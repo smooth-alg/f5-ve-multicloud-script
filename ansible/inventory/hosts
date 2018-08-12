@@ -1,0 +1,4 @@
+[bigips]
+bigip-aws.example.com
+bigip-azure.example.com
+bigip-gce.example.com

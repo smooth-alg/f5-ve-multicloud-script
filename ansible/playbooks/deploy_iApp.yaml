@@ -21,6 +21,7 @@
       F5_PASSWORD: "{{ bigip_rest_password }}"  #Inherit from vault
       F5_SERVER_PORT: "{{ bigip_port }}"
       F5_VALIDATE_CERTS: "{{ validate_certs }}"
+      install_path: "/var/tmp/ansible"
   # pre_tasks:
   #   - name: Set iApp specific variables if not inheriting
   #     set_fact:

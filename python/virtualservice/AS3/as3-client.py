@@ -271,6 +271,7 @@ if __name__ == "__main__":
     parser.add_argument("--sd-application-id",dest="sd_application_id",help="tag polling interval",default=15)
     parser.add_argument("--sd-api-access-key",dest="sd_api_access_key",help="tag polling interval",default=15)
 
+
     parser.add_argument("-f","--file",help="declaration JSON file")
     parser.add_argument("--level",help="log level (default info)",default="info")
     parser.add_argument("--trace",help="trace",default=False,action="store_true")
@@ -317,10 +318,11 @@ if __name__ == "__main__":
 
         payload = json.loads(payload_text)
 
-        # Better to use jinja but quick dirty mod to insert service discovery values in template
+        # Grab Pool
         pool = payload["tenant"]["https"]["pool"]["members"][0]
 
-        payload_map = {
+        # Better to use jinja but quick dirty mod to override some values in payload
+        args_to_payload_map = {
             'sd_tag_key': 'tagKey',
             'sd_tag_value':  'tagValue',
             'sd_provider': 'addressDiscovery',
@@ -336,33 +338,15 @@ if __name__ == "__main__":
         }
 
         # Modify payload from args
-        for k,v in payload_map.iteritems():
+        for k,v in args_to_payload_map.iteritems():
             if args.__dict__[k]:
-                pool[v] = args.__dict__[k]
-        # if args.sd_tag_key:
-        #     pool["tagKey"] = args.sd_tag_key
-        # if args.sd_tag_value:
-        #     pool["tagValue"] = args.sd_tag_value
-        # if args.sd_provider:
-        #     pool['addressDiscovery'] = args.sd_provider
-        # if args.sd_service_port:      
-        #     pool['servicePort'] = args.sd_service_port
-        # if args.sd_update_interval: 
-        #     pool['updateInterval'] = args.sd_update_interval
-        # if args.sd_address_realm: 
-        #     pool['addressRealm'] = args.sd_address_realm
-        # if args.sd_region: 
-        #     pool['region'] = args.sd_region
-        # if args.sd_resource_group: 
-        #     pool['resourceGroup'] = args.sd_resource_group
-        # if args.sd_resource_group: 
-        #     pool['subscriptionId'] = args.sd_subscription_id
-        # if args.sd_directory_id: 
-        #     pool['directoryId'] = args.sd_directory_id       
-        # if args.sd_application_id: 
-        #     pool['applicationId'] = args.sd_application_id
-        # if args.sd_api_access_key: 
-        #     pool['apiAccessKey'] = args.sd_api_access_key
+                if v in pool:
+                    pool[v] = args.__dict__[k]
+
+        # Prefer obtaining key through env vs. arg
+        if 'apiAccessKey' in pool:
+            if 'ARM_CLIENT_SECRET' in os.environ:
+                pool['apiAccessKey'] = os.environ['ARM_CLIENT_SECRET']
 
         payload = client.set_payload(payload, "deploy")
 
@@ -508,8 +492,6 @@ if __name__ == "__main__":
     #    req = icr.post(base_url + "/shared/appsvcs/declare",data=json.dumps(payload))
 
     #    print_json(req, args.compact)
-
-
 
 
     elif args.action == 'dry-run':

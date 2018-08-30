@@ -8,6 +8,7 @@
 from icontrol.session import iControlRESTSession
 from icontrol.exceptions import iControlUnexpectedHTTPError
 from requests.exceptions import HTTPError
+#import jsonpatch
 import argparse
 import json
 import os
@@ -263,6 +264,12 @@ if __name__ == "__main__":
     parser.add_argument("--sd-address-realm",dest="sd_address_realm",help="address type. ex. public/private", default="private")
     parser.add_argument("--sd-service-port",dest="sd_service_port",help="pool members port",action="store_true",default=80)
     parser.add_argument("--sd-update-interval",dest="sd_update_interval",help="tag polling interval",default=15)
+    # Azure Specific because no ROLES
+    parser.add_argument("--sd-resource-group",dest="sd_resource_group",help="resource group" )
+    parser.add_argument("--sd-subscription-id",dest="sd_subscription_id",help="tag polling interval",default=15)
+    parser.add_argument("--sd-directory-id",dest="sd_directory_id",help="tag polling interval",default=15)
+    parser.add_argument("--sd-application-id",dest="sd_application_id",help="tag polling interval",default=15)
+    parser.add_argument("--sd-api-access-key",dest="sd_api_access_key",help="tag polling interval",default=15)
 
     parser.add_argument("-f","--file",help="declaration JSON file")
     parser.add_argument("--level",help="log level (default info)",default="info")
@@ -300,6 +307,8 @@ if __name__ == "__main__":
               'persist':args.persist}
     client = AS3(**kwargs)
 
+
+
     if args.action == 'deploy':
         if args.file == "-":
             payload_text = sys.stdin.read()
@@ -310,10 +319,30 @@ if __name__ == "__main__":
 
         # Better to use jinja but quick dirty mod to insert service discovery values in template
         pool = payload["tenant"]["https"]["pool"]["members"][0]
-        if args.sd_tag_key:
-            pool["tagKey"] = args.sd_tag_key
-        if args.sd_tag_value:
-            pool["tagValue"] = args.sd_tag_value
+
+        payload_map = {
+            'sd_tag_key': 'tagKey',
+            'sd_tag_value':  'tagValue',
+            'sd_provider': 'addressDiscovery',
+            'sd_service_port': 'servicePort',
+            'sd_update_interval': 'updateInterval',
+            'sd_address_realm': 'ddressRealm',
+            'sd_region': 'region',
+            'sd_resource_group': 'resourceGroup',
+            'sd_subscription_id': 'subscriptionId',
+            'sd_directory_id': 'directoryId',
+            'sd_application_id': 'applicationId',
+            'sd_api_access_key': 'apiAccessKey'
+        }
+
+        # Modify payload from args
+        for k,v in payload_map.iteritems():
+            if args.__dict__[k]:
+                pool[v] = args.__dict__[k]
+        # if args.sd_tag_key:
+        #     pool["tagKey"] = args.sd_tag_key
+        # if args.sd_tag_value:
+        #     pool["tagValue"] = args.sd_tag_value
         # if args.sd_provider:
         #     pool['addressDiscovery'] = args.sd_provider
         # if args.sd_service_port:      
@@ -324,6 +353,16 @@ if __name__ == "__main__":
         #     pool['addressRealm'] = args.sd_address_realm
         # if args.sd_region: 
         #     pool['region'] = args.sd_region
+        # if args.sd_resource_group: 
+        #     pool['resourceGroup'] = args.sd_resource_group
+        # if args.sd_resource_group: 
+        #     pool['subscriptionId'] = args.sd_subscription_id
+        # if args.sd_directory_id: 
+        #     pool['directoryId'] = args.sd_directory_id       
+        # if args.sd_application_id: 
+        #     pool['applicationId'] = args.sd_application_id
+        # if args.sd_api_access_key: 
+        #     pool['apiAccessKey'] = args.sd_api_access_key
 
         payload = client.set_payload(payload, "deploy")
 
@@ -387,26 +426,9 @@ if __name__ == "__main__":
         
         payload = json.loads(payload_text)
 
-        # Better to use jinja but quick dirty mod to insert service discovery values in template
-        pool = payload["tenant"]["https"]["pool"]["members"][0]
-        if args.sd_tag_key:
-            pool["tagKey"] = args.sd_tag_key
-        if args.sd_tag_value:
-            pool["tagValue"] = args.sd_tag_value
-        # if args.sd_provider:
-        #     pool['addressDiscovery'] = args.sd_provider
-        # if args.sd_service_port:      
-        #     pool['servicePort'] = args.sd_service_port
-        # if args.sd_update_interval: 
-        #     pool['updateInterval'] = args.sd_update_interval
-        # if args.sd_address_realm: 
-        #     pool['addressRealm'] = args.sd_address_realm
-        # if args.sd_region: 
-        #     pool['region'] = args.sd_region
-
         print(json.dumps(payload))
 
-        req = client.icr.patch(client.base_url + "/shared/appsvcs/declare/",data=payload)
+        req = client.icr.patch(client.base_url + "/shared/appsvcs/declare/",data=payload_text)
 
         client.print_json(req, args.compact)
 

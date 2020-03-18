@@ -3,21 +3,21 @@
 	"schemaVersion":"3.0.0",
 	"label":"ASM_VS1",
 	"class":"ADC",
-	"Sample_app_sec_Tenant":{ 
-		"HTTPS_Service":{ 
+	"tenant":{ 
+		"https":{ 
 			"WAFPolicy":{ 
 				"ignoreChanges":true,
           		"url":"https://raw.githubusercontent.com/f5devcentral/f5-asm-policy-templates/master/owasp_ready_template/owasp-no-auto-tune-v1.1.xml",
 				"class":"WAF_Policy"
 			},
-			"Pool1":{ 
+			"pool":{ 
 				"class":"Pool",
 				"members":[ 
 					{ 
 						"servicePort":80,
 						"region":"us-west-2",
 	                    "tagKey": "aws:autoscaling:groupName",
-                        "tagValue": "f5demoapp-prod-v000",
+                        "tagValue": "f5demoapp-prod-v001",
 						"addressDiscovery":"aws",
 						"updateInterval":10,
 						"addressRealm":"private"
@@ -37,7 +37,7 @@
 				"policyWAF":{ 
 					"use":"WAFPolicy"
 				},
-				"pool":"Pool1",
+				"pool":"pool",
 				"serverTLS":{ 
 					"bigip":"/Common/clientssl"
 				},

@@ -68,6 +68,9 @@ if __name__ == '__main__':
     tm = Template(declaration_template)    
     rendered = tm.render(runtime_vars_d)
 
+    print("declaration rendered:")
+    print(rendered)
+
     # configure AS3
     result = as3_client.service.create(config=json.loads(rendered))
     print(json.dumps(result, indent=2))

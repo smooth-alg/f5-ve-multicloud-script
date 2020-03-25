@@ -1,7 +1,7 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 """ Update BIG-IP L4-L7 configuration using AS3
-# Usage: as3-sdk-client.py --host XX.XX.XX.XX --port 8443  -f templates/https_waf_sd_aws.json.j2 --runtime-vars 'tagKey=aws:autoscaling:groupName,tagValue=f5demoapp-prod-v004,region=us-west-2'
+# Usage: as3-sdk-client.py --host XX.XX.XX.XX --port 8443  -f templates/https_waf_sd_aws.json.j2 --runtime-vars 'region=us-west-2,tagKey=aws:autoscaling:groupName,tagValue=f5demoapp-prod-v004'
 
 # Replicate
 # as3-client.py --host bigip.aws.example.com:8443 -f python/virtualservice/AS3/templates/https_waf_sd_aws.json --sd-tag-key aws:autoscaling:groupName --sd-tag-value ${#stage(\"Deploy in us-west-2\").context[\"deploy.server.groups\"][\"us-west-2\"]} -a deploy

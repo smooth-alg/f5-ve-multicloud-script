@@ -6,11 +6,12 @@
 # Replicate
 # as3-client.py --host bigip.aws.example.com:8443 -f python/virtualservice/AS3/templates/https_waf_sd_aws.json --sd-tag-key aws:autoscaling:groupName --sd-tag-value ${#stage(\"Deploy in us-west-2\").context[\"deploy.server.groups\"][\"us-west-2\"]} -a deploy
 """
-import argparse
-import json
+
 import os
 import sys
 import logging
+import json
+import argparse
 from jinja2 import Template
 
 from f5sdk.bigip import ManagementClient
@@ -22,14 +23,12 @@ LOGGER = Logger(__name__).get_logger()
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description='Script to manage an AS3 declaration')
-    parser.add_argument("--host", help="The IP/Hostname of the BIG-IP device",default='https://192.168.1.245')
+    parser.add_argument("--host", help="The IP/Hostname of the BIG-IP device",default='192.168.1.245')
     parser.add_argument("--port", help="The MGMT Port BIG-IP device",default='443')
     parser.add_argument("-u", "--username",default='admin')
     parser.add_argument("-p", "--password",default='admin')
     parser.add_argument("-f","--file",help="declaration JSON file")
     parser.add_argument("--runtime-vars",dest="runtime_vars",help="comma seperated list of run time vars. ex. tagKey=myvalue1,tagValue=myvalue1, ")
-    parser.add_argument("--level",help="log level (default info)",default="info")
-    parser.add_argument("--show",help="show")
     args = parser.parse_args()
 
     username = args.username
